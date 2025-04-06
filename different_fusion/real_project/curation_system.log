@@ -1,0 +1,29 @@
+2025-04-04 22:18:04,891 - __main__ - WARNING - No OpenAI API key found. Using local model fallback.
+2025-04-04 22:18:04,936 - __main__ - WARNING - No OpenAI API key found. Using local model fallback.
+2025-04-04 22:18:07,150 - huggingface_hub.file_download - WARNING - Xet Storage is enabled for this repo, but the 'hf_xet' package is not installed. Falling back to regular HTTP download. For better performance, install the package with: `pip install huggingface_hub[hf_xet]` or `pip install hf_xet`
+2025-04-04 22:18:10,201 - __main__ - INFO - Text processor initialized successfully
+2025-04-04 22:18:10,303 - __main__ - INFO - Text processor initialized successfully
+2025-04-04 22:18:19,626 - __main__ - INFO - Image processor initialized successfully
+2025-04-04 22:18:19,628 - __main__ - INFO - Image processor initialized successfully
+2025-04-04 22:18:29,514 - __main__ - INFO - Audio processor initialized successfully
+2025-04-04 22:18:29,514 - __main__ - INFO - Audio processor initialized successfully
+2025-04-04 22:18:29,515 - __main__ - INFO - Video processor initialized successfully
+2025-04-04 22:18:29,515 - __main__ - INFO - Video processor initialized successfully
+2025-04-04 22:18:29,901 - huggingface_hub.file_download - WARNING - Xet Storage is enabled for this repo, but the 'hf_xet' package is not installed. Falling back to regular HTTP download. For better performance, install the package with: `pip install huggingface_hub[hf_xet]` or `pip install hf_xet`
+2025-04-04 22:18:37,499 - __main__ - INFO - Bias detection model loaded successfully
+2025-04-04 22:18:37,499 - __main__ - INFO - Bias detection model loaded successfully
+2025-04-04 22:25:57,139 - __main__ - WARNING - No OpenAI API key found. Using local model fallback.
+2025-04-04 22:25:58,210 - __main__ - INFO - Text processor initialized successfully
+2025-04-04 22:25:59,825 - __main__ - INFO - Image processor initialized successfully
+2025-04-04 22:26:01,444 - __main__ - INFO - Audio processor initialized successfully
+2025-04-04 22:26:01,444 - __main__ - INFO - Video processor initialized successfully
+2025-04-04 22:26:02,653 - __main__ - INFO - Bias detection model loaded successfully
+2025-04-04 22:26:02,706 - __main__ - INFO - Starting web interface at http://0.0.0.0:8000
+2025-04-04 22:26:02,772 - httpx - INFO - HTTP Request: GET http://localhost:8001/startup-events "HTTP/1.1 200 OK"
+2025-04-04 22:26:02,783 - httpx - INFO - HTTP Request: HEAD http://localhost:8001/ "HTTP/1.1 500 Internal Server Error"
+2025-04-04 22:26:02,837 - httpx - INFO - HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
+2025-04-04 22:26:03,272 - httpx - INFO - HTTP Request: GET https://checkip.amazonaws.com/ "HTTP/1.1 200 "
+2025-04-04 22:26:03,291 - httpx - INFO - HTTP Request: HEAD http://localhost:8001/ "HTTP/1.1 500 Internal Server Error"
+2025-04-04 22:26:03,803 - httpx - INFO - HTTP Request: HEAD http://localhost:8001/ "HTTP/1.1 500 Internal Server Error"
+2025-04-04 22:26:04,314 - httpx - INFO - HTTP Request: HEAD http://localhost:8001/ "HTTP/1.1 500 Internal Server Error"
+2025-04-04 22:26:04,825 - httpx - INFO - HTTP Request: HEAD http://localhost:8001/ "HTTP/1.1 500 Internal Server Error"
