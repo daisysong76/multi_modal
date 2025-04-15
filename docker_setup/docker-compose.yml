@@ -1,0 +1,13 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker_setup/Dockerfile
+    volumes:
+      - ..:/app
+    ports:
+      - "8888:8888"
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    command: python semantic_alignment/demo.py 

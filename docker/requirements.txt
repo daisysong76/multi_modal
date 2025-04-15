@@ -1,0 +1,47 @@
+# Core dependencies
+numpy>=1.25.0
+pandas>=2.0.0
+torch>=2.6.0
+tqdm>=4.65.0
+requests>=2.26.0
+
+# Web interface
+fastapi>=0.68.0
+uvicorn>=0.15.0
+gradio>=3.0.0
+python-multipart>=0.0.5
+
+# Image processing
+Pillow>=9.2.0
+opencv-python>=4.8.0
+matplotlib>=3.7.0
+seaborn>=0.11.0
+
+# Audio processing
+librosa>=0.11.0
+
+# Machine learning and NLP
+scikit-learn>=1.3.0
+transformers>=4.30.0
+
+# Logging and utilities
+python-json-logger>=2.0.0
+
+# Optional: for development
+pytest>=6.2.0
+black>=21.7b0
+flake8>=3.9.0
+mypy>=0.910
+
+# Added from the code block
+torchaudio>=2.0.0
+torchvision>=0.15.0
+scipy>=1.10.0
+einops>=0.6.0
+hydra-core>=1.3.0
+wandb>=0.15.0
+pytorch-lightning>=2.0.0
+moviepy>=2.1.2
+soundfile>=0.13.1
+timm>=0.9.0
+av>=10.0.0 

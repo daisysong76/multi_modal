@@ -1,0 +1,20 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: simple_docker/Dockerfile
+    volumes:
+      - ..:/app
+    ports:
+      - "8888:8888"  # For Jupyter if needed
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    command: python semantic_alignment/demo.py
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu] 

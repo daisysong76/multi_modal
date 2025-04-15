@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    volumes:
+      - ..:/app
+    ports:
+      - "8888:8888"  # For Jupyter if needed
+    environment:
+      - PYTHONPATH=/app
+    command: python semantic_alignment/demo.py
+    healthcheck:
+      test: ["CMD", "python", "-c", "import torch; print(torch.__version__)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3 
