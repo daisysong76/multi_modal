@@ -1,0 +1,4 @@
+venv/
+fresh_venv/
+*.dylib
+output/*.wav

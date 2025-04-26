@@ -81,6 +81,9 @@ def main():
         model.eval()
         clean_memory()
         
+        # Initialize evaluator
+        evaluator = AlignmentEvaluator(model=model)
+        
         # Process through model
         print("\nProcessing through model...")
         with torch.no_grad():
@@ -95,9 +98,6 @@ def main():
         
         # Get results
         print(f"\nModel outputs keys: {outputs.keys()}")
-        
-        # Initialize evaluator
-        evaluator = AlignmentEvaluator(output_dir="output")
         
         # Compute evaluation metrics
         metrics = evaluator.compute_metrics(

@@ -3,6 +3,8 @@ it need to be runned through docker:
 
 cd simple_docker && ./build.sh && docker run -it --memory=8g --memory-swap=16g --shm-size=1g -v /Users/songxiaomei/Desktop/multi_modal:/app/input semantic-alignment
 
+cd simple_docker && chmod +x build.sh && ./build.sh && docker run -it --memory=8g --memory-swap=16g --shm-size=1g -v /Users/songxiaomei/Desktop/multi_modal:/app/input semantic-alignment
+
 
 
 The code ran successfully and completed the semantic alignment analysis. Here's what happened:

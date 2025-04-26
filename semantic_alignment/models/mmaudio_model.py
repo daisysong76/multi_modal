@@ -42,10 +42,10 @@ class MMAudio(nn.Module):
     def __init__(
         self,
         video_dim: int = 1024,
-        audio_dim: int = 512,  # Reduced from 768
-        hidden_dim: int = 256,  # Reduced from 512
-        num_heads: int = 4,    # Reduced from 8
-        depth: int = 2,
+        audio_dim: int = 512,
+        hidden_dim: int = 512,  # Increased from 256
+        num_heads: int = 8,     # Increased from 4
+        depth: int = 3,         # Increased from 2
         max_video_frames: int = 32,
         max_audio_frames: int = 1024,
         device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -55,27 +55,43 @@ class MMAudio(nn.Module):
         self.device = device
         
         # Video processing
-        self.video_embed = nn.Linear(video_dim, hidden_dim)
+        self.video_embed = nn.Sequential(
+            nn.Linear(video_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim)
+        )
         self.video_pos_embed = nn.Parameter(torch.randn(1, max_video_frames, hidden_dim))
         
         # Audio processing
-        self.audio_embed = nn.Linear(audio_dim, hidden_dim)
+        self.audio_embed = nn.Sequential(
+            nn.Linear(audio_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim)
+        )
         self.audio_pos_embed = nn.Parameter(torch.randn(1, max_audio_frames, hidden_dim))
         
         # Cross-modal processing
-        self.cross_attention = CrossModalAttention(hidden_dim, num_heads)
+        self.cross_attention_layers = nn.ModuleList([
+            CrossModalAttention(hidden_dim, num_heads)
+            for _ in range(depth)
+        ])
+        self.layer_norms = nn.ModuleList([
+            nn.LayerNorm(hidden_dim)
+            for _ in range(depth * 2)  # One for each attention layer output
+        ])
         
-        # Output heads
+        # Output heads with proper scaling
         self.audio_decoder = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim * 2),
+            nn.LayerNorm(hidden_dim * 2),
             nn.GELU(),
-            nn.Linear(hidden_dim, audio_dim)
+            nn.Linear(hidden_dim * 2, audio_dim)
         )
         
         self.semantic_alignment_head = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.GELU(),
-            nn.Linear(hidden_dim, 1)
+            nn.Linear(hidden_dim, 1),
+            nn.Sigmoid()  # Normalize alignment scores
         )
         
         # Move to device
@@ -84,6 +100,8 @@ class MMAudio(nn.Module):
     def encode_video(self, video_features: torch.Tensor) -> torch.Tensor:
         b = video_features.size(0)
         t = video_features.size(1)
+        # Normalize input features
+        video_features = F.normalize(video_features, p=2, dim=-1)
         x = self.video_embed(video_features)
         x = x + self.video_pos_embed[:, :t]
         return x
@@ -91,6 +109,8 @@ class MMAudio(nn.Module):
     def encode_audio(self, audio_features: torch.Tensor) -> torch.Tensor:
         b = audio_features.size(0)
         t = audio_features.size(1)
+        # Normalize input features
+        audio_features = F.normalize(audio_features, p=2, dim=-1)
         x = self.audio_embed(audio_features)
         x = x + self.audio_pos_embed[:, :t]
         return x
@@ -151,7 +171,7 @@ class MMAudio(nn.Module):
         video_attended = []
         for i in range(0, video_encoded.size(1), chunk_size):
             chunk = video_encoded[:, i:i + chunk_size]
-            chunk_attended = self.cross_attention(chunk, audio_encoded)
+            chunk_attended = self.cross_attention_layers[0](chunk, audio_encoded)
             video_attended.append(chunk_attended)
             del chunk
             if torch.cuda.is_available():
@@ -163,7 +183,7 @@ class MMAudio(nn.Module):
         audio_attended = []
         for i in range(0, audio_encoded.size(1), chunk_size):
             chunk = audio_encoded[:, i:i + chunk_size]
-            chunk_attended = self.cross_attention(chunk, video_encoded)
+            chunk_attended = self.cross_attention_layers[0](chunk, video_encoded)
             audio_attended.append(chunk_attended)
             del chunk
             if torch.cuda.is_available():

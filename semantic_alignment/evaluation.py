@@ -7,11 +7,16 @@ from typing import Dict, Tuple, List
 import torch.nn.functional as F
 import os
 import json
+from sklearn.decomposition import PCA
+from scipy.interpolate import interp1d
 
 class AlignmentEvaluator:
-    def __init__(self, output_dir: str = "output"):
-        self.output_dir = output_dir
-        self.vis_dir = os.path.join(output_dir, "visualizations")
+    def __init__(self, model=None):
+        """Initialize evaluator with optional model instance"""
+        self.model = model
+        self.metrics = {}
+        self.output_dir = "output"
+        self.vis_dir = os.path.join(self.output_dir, "visualizations")
         # Create output directories
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.vis_dir, exist_ok=True)
@@ -96,8 +101,17 @@ class AlignmentEvaluator:
                             video_emb: torch.Tensor, 
                             audio_emb: torch.Tensor) -> float:
         """Compute embedding space gap between modalities"""
-        video_mean = video_emb.mean(dim=0)
-        audio_mean = audio_emb.mean(dim=0)
+        # Handle different temporal dimensions by taking mean across time
+        video_mean = video_emb.mean(dim=1)  # Average across time dimension
+        audio_mean = audio_emb.mean(dim=1)  # Average across time dimension
+        
+        # Project embeddings to same feature dimension if needed
+        if video_mean.shape[-1] != audio_mean.shape[-1]:
+            target_dim = min(video_mean.shape[-1], audio_mean.shape[-1])
+            if video_mean.shape[-1] > target_dim:
+                video_mean = video_mean[..., :target_dim]
+            if audio_mean.shape[-1] > target_dim:
+                audio_mean = audio_mean[..., :target_dim]
         
         # Compute Wasserstein distance approximation
         modality_gap = torch.norm(video_mean - audio_mean, p=2).item()
@@ -155,38 +169,89 @@ class AlignmentEvaluator:
         )
         print(f"Saved attention plot to {save_path}")
     
-    def _plot_embedding_space(self, 
-                            video_emb: np.ndarray,
-                            audio_emb: np.ndarray,
-                            save_path: str) -> None:
-        """Plot 2D visualization of embedding space"""
+    def _plot_embedding_space(self, video_embeddings, audio_embeddings, output_path):
+        """Plot the embedding space visualization."""
+        import numpy as np
         from sklearn.decomposition import PCA
-        
-        # Apply PCA
-        pca = PCA(n_components=2)
-        combined = np.vstack([video_emb, audio_emb])
-        reduced = pca.fit_transform(combined)
-        
-        # Split back into modalities
-        video_reduced = reduced[:len(video_emb)]
-        audio_reduced = reduced[len(video_emb):]
-        
-        # Plot
-        plt.figure(figsize=(8, 8))
-        plt.scatter(video_reduced[:, 0], video_reduced[:, 1], 
-                   label='Video', alpha=0.6)
-        plt.scatter(audio_reduced[:, 0], audio_reduced[:, 1], 
-                   label='Audio', alpha=0.6)
-        plt.title("Embedding Space Visualization")
+        import matplotlib.pyplot as plt
+        import os
+
+        # Convert tensors to numpy if needed
+        if hasattr(video_embeddings, 'detach'):
+            video_embeddings = video_embeddings.detach().cpu().numpy()
+        if hasattr(audio_embeddings, 'detach'):
+            audio_embeddings = audio_embeddings.detach().cpu().numpy()
+
+        # Calculate mean embeddings
+        video_emb_mean = video_embeddings.mean(axis=0)  # Average across time dimension
+        audio_emb_mean = audio_embeddings.mean(axis=0)  # Average across time dimension
+
+        # Reshape if needed
+        if len(video_emb_mean.shape) == 1:
+            video_emb_mean = video_emb_mean.reshape(1, -1)
+        if len(audio_emb_mean.shape) == 1:
+            audio_emb_mean = audio_emb_mean.reshape(1, -1)
+
+        # Handle case where we have too few samples for PCA
+        if video_emb_mean.shape[0] < 2 or audio_emb_mean.shape[0] < 2:
+            print("Not enough samples for PCA visualization - plotting raw embeddings")
+            # Take first two dimensions for visualization
+            video_emb_2d = video_emb_mean[:, :2]
+            audio_emb_2d = audio_emb_mean[:, :2]
+        else:
+            # Apply PCA
+            video_pca = PCA(n_components=2)
+            audio_pca = PCA(n_components=2)
+            video_emb_2d = video_pca.fit_transform(video_emb_mean)
+            audio_emb_2d = audio_pca.fit_transform(audio_emb_mean)
+
+        # Create visualization
+        plt.figure(figsize=(10, 8))
+        plt.scatter(video_emb_2d[:, 0], video_emb_2d[:, 1], c='blue', label='Video', alpha=0.6)
+        plt.scatter(audio_emb_2d[:, 0], audio_emb_2d[:, 1], c='red', label='Audio', alpha=0.6)
+        plt.title('Embedding Space Visualization')
+        plt.xlabel('Dimension 1')
+        plt.ylabel('Dimension 2')
         plt.legend()
-        plt.savefig(save_path)
+        plt.grid(True, alpha=0.3)
+
+        # Save plot
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        plt.savefig(output_path)
         plt.close()
+        print(f"Saved embedding space visualization to {output_path}")
     
     def _plot_reconstruction_quality(self,
                                    pred: np.ndarray,
                                    true: np.ndarray,
                                    save_path: str) -> None:
         """Plot reconstruction quality heatmap"""
+        # Convert tensors to numpy if needed
+        if torch.is_tensor(pred):
+            pred = pred.detach().cpu().numpy()
+        if torch.is_tensor(true):
+            true = true.detach().cpu().numpy()
+            
+        # Interpolate predicted features to match true features time dimension
+        if pred.shape[1] != true.shape[1]:
+            print(f"Interpolating predicted features from shape {pred.shape} to match true features shape {true.shape}")
+            # Reshape to 2D for interpolation
+            pred_2d = pred.reshape(-1, pred.shape[-1])
+            true_2d = true.reshape(-1, true.shape[-1])
+            
+            # Create interpolation function
+            x = np.linspace(0, 1, pred_2d.shape[0])
+            x_new = np.linspace(0, 1, true_2d.shape[0])
+            
+            # Interpolate each feature dimension
+            interpolated = np.zeros((true_2d.shape[0], pred_2d.shape[1]))
+            for i in range(pred_2d.shape[1]):
+                f = interp1d(x, pred_2d[:, i], kind='linear')
+                interpolated[:, i] = f(x_new)
+            
+            # Reshape back to original dimensions
+            pred = interpolated.reshape(true.shape[0], true.shape[1], -1)
+        
         error = np.abs(pred - true).mean(axis=-1)
         
         plt.figure(figsize=(10, 4))
@@ -202,6 +267,20 @@ class AlignmentEvaluator:
                                audio_emb: torch.Tensor,
                                save_path: str) -> None:
         """Plot cross-modal attention heatmap"""
+        # Ensure we're using encoded embeddings (256-dim)
+        if video_emb.shape[-1] != 256:
+            print(f"Warning: Expected video embeddings of dim 256, got {video_emb.shape[-1]}")
+            if self.model:
+                video_emb = self.model.encode_video(video_emb)
+            else:
+                print("No model available for encoding, using raw embeddings")
+        if audio_emb.shape[-1] != 256:
+            print(f"Warning: Expected audio embeddings of dim 256, got {audio_emb.shape[-1]}")
+            if self.model:
+                audio_emb = self.model.encode_audio(audio_emb)
+            else:
+                print("No model available for encoding, using raw embeddings")
+            
         # Compute attention weights
         video_norm = F.normalize(video_emb, p=2, dim=-1)
         audio_norm = F.normalize(audio_emb, p=2, dim=-1)
