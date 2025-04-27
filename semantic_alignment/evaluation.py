@@ -27,8 +27,12 @@ class AlignmentEvaluator:
                        video_embeddings: torch.Tensor,
                        audio_embeddings: torch.Tensor,
                        alignment_scores: torch.Tensor) -> Dict[str, float]:
-        """Compute comprehensive evaluation metrics"""
+        """Compute comprehensive evaluation metrics for cross-modal alignment"""
         metrics = {}
+        
+        # Normalize embeddings for consistent comparisons
+        video_emb_norm = F.normalize(video_embeddings, p=2, dim=-1)
+        audio_emb_norm = F.normalize(audio_embeddings, p=2, dim=-1)
         
         # Interpolate predicted audio to match true audio temporal dimension
         audio_pred_interp = F.interpolate(
@@ -37,25 +41,41 @@ class AlignmentEvaluator:
             mode='linear'
         ).transpose(1, 2)  # Back to [B, T, C]
         
-        # Reconstruction quality
+        # Basic reconstruction quality metrics
         metrics["mse_loss"] = F.mse_loss(audio_pred_interp, audio_true).item()
-        metrics["cosine_sim"] = F.cosine_similarity(
-            audio_pred_interp.mean(dim=1),  # Average across time dimension
-            audio_true.mean(dim=1),         # Average across time dimension
-            dim=-1  # Compare along feature dimension
-        ).mean().item()
         
-        # Cross-modal alignment
+        # Cosine similarity between predicted and true audio features
+        audio_pred_norm = F.normalize(audio_pred_interp.mean(dim=1), p=2, dim=-1)
+        audio_true_norm = F.normalize(audio_true.mean(dim=1), p=2, dim=-1)
+        metrics["cosine_sim"] = F.cosine_similarity(audio_pred_norm, audio_true_norm, dim=-1).mean().item()
+        
+        # Cross-modal embedding similarity (improved calculation)
         metrics["embedding_similarity"] = self._compute_embedding_similarity(
-            video_embeddings, audio_embeddings
+            video_emb_norm, audio_emb_norm
         )
         
-        # Temporal alignment
+        # Temporal alignment metrics
         metrics["temporal_consistency"] = self._compute_temporal_consistency(alignment_scores)
         
-        # Modality gap
+        # Modality gap (distance between embedding spaces)
         metrics["modality_gap"] = self._compute_modality_gap(
-            video_embeddings, audio_embeddings
+            video_emb_norm, audio_emb_norm
+        )
+        
+        # NEW: Mutual information (approximation)
+        metrics["mutual_information"] = self._compute_mutual_information(
+            video_emb_norm, audio_emb_norm
+        )
+        
+        # NEW: Cross-modal retrieval metrics
+        retrieval_metrics = self._compute_retrieval_metrics(
+            video_emb_norm, audio_emb_norm
+        )
+        metrics.update(retrieval_metrics)
+        
+        # NEW: Structural similarity (comparing patterns rather than exact values)
+        metrics["structural_similarity"] = self._compute_structural_similarity(
+            audio_pred_interp, audio_true
         )
         
         # Save numerical results
@@ -64,10 +84,108 @@ class AlignmentEvaluator:
         
         return metrics
     
+    def _compute_mutual_information(self, 
+                                    video_emb: torch.Tensor, 
+                                    audio_emb: torch.Tensor) -> float:
+        """Compute approximate mutual information between modalities"""
+        # Ensure compatible dimensions for matrix multiplication
+        video_mean = video_emb.mean(dim=1)  # [B, D_v]
+        audio_mean = audio_emb.mean(dim=1)  # [B, D_a]
+        
+        # Project to same dimension if needed
+        if video_mean.shape[-1] != audio_mean.shape[-1]:
+            min_dim = min(video_mean.shape[-1], audio_mean.shape[-1])
+            if video_mean.shape[-1] > min_dim:
+                video_mean = video_mean[..., :min_dim]
+            if audio_mean.shape[-1] > min_dim:
+                audio_mean = audio_mean[..., :min_dim]
+        
+        # Compute joint probability matrix (similarity matrix)
+        joint_matrix = torch.matmul(video_mean, audio_mean.transpose(-2, -1))
+        joint_matrix = F.softmax(joint_matrix.flatten(), dim=0).reshape(joint_matrix.shape)
+        
+        # Compute marginal probabilities
+        p_video = joint_matrix.sum(dim=-1, keepdim=True)
+        p_audio = joint_matrix.sum(dim=-2, keepdim=True)
+        
+        # Compute mutual information
+        eps = 1e-8  # small constant to avoid log(0)
+        mi_matrix = joint_matrix * torch.log(joint_matrix / (p_video * p_audio) + eps)
+        mi = mi_matrix.sum().item()
+        
+        return mi
+    
+    def _compute_retrieval_metrics(self,
+                                  video_emb: torch.Tensor,
+                                  audio_emb: torch.Tensor) -> Dict[str, float]:
+        """Compute cross-modal retrieval metrics"""
+        metrics = {}
+        
+        # Average embeddings across time dimension
+        video_mean = video_emb.mean(dim=1)
+        audio_mean = audio_emb.mean(dim=1)
+        
+        # Project to same dimension if needed
+        if video_mean.shape[-1] != audio_mean.shape[-1]:
+            min_dim = min(video_mean.shape[-1], audio_mean.shape[-1])
+            if video_mean.shape[-1] > min_dim:
+                video_mean = video_mean[..., :min_dim]
+            if audio_mean.shape[-1] > min_dim:
+                audio_mean = audio_mean[..., :min_dim]
+        
+        # Compute similarity matrix
+        similarity = torch.matmul(video_mean, audio_mean.transpose(-2, -1))
+        
+        # For each video, get rank of corresponding audio
+        _, v2a_ranks = similarity.sort(dim=-1, descending=True)
+        v2a_ranks = (v2a_ranks == torch.arange(v2a_ranks.size(0), device=v2a_ranks.device).unsqueeze(-1)).nonzero()[:, 1]
+        
+        # For each audio, get rank of corresponding video
+        _, a2v_ranks = similarity.transpose(-2, -1).sort(dim=-1, descending=True)
+        a2v_ranks = (a2v_ranks == torch.arange(a2v_ranks.size(0), device=a2v_ranks.device).unsqueeze(-1)).nonzero()[:, 1]
+        
+        # Calculate recall@k and median rank
+        metrics["v2a_recall@1"] = (v2a_ranks < 1).float().mean().item()
+        metrics["v2a_recall@5"] = (v2a_ranks < 5).float().mean().item()
+        metrics["a2v_recall@1"] = (a2v_ranks < 1).float().mean().item()
+        metrics["a2v_recall@5"] = (a2v_ranks < 5).float().mean().item()
+        
+        metrics["v2a_median_rank"] = v2a_ranks.float().median().item()
+        metrics["a2v_median_rank"] = a2v_ranks.float().median().item()
+        
+        return metrics
+    
+    def _compute_structural_similarity(self,
+                                      pred: torch.Tensor,
+                                      true: torch.Tensor) -> float:
+        """Compute structural similarity between predicted and ground truth features"""
+        # Convert to numpy
+        if torch.is_tensor(pred):
+            pred = pred.detach().cpu().numpy()
+        if torch.is_tensor(true):
+            true = true.detach().cpu().numpy()
+            
+        # Compute correlation matrices (temporal correlations)
+        pred_corr = np.corrcoef(pred.reshape(-1, pred.shape[-1]))
+        true_corr = np.corrcoef(true.reshape(-1, true.shape[-1]))
+        
+        # Handle NaNs
+        pred_corr = np.nan_to_num(pred_corr)
+        true_corr = np.nan_to_num(true_corr)
+        
+        # Compare correlation matrices (Frobenius norm of difference)
+        diff_norm = np.linalg.norm(pred_corr - true_corr)
+        base_norm = np.linalg.norm(true_corr)
+        
+        # Normalize to [0, 1] where 1 is perfect similarity
+        similarity = 1.0 - min(diff_norm / max(base_norm, 1e-8), 1.0)
+        
+        return similarity
+    
     def _compute_embedding_similarity(self, 
                                     video_emb: torch.Tensor, 
                                     audio_emb: torch.Tensor) -> float:
-        """Compute similarity between video and audio embeddings"""
+        """Compute improved similarity between video and audio embeddings"""
         # Project embeddings to same dimension if needed
         if video_emb.shape[-1] != audio_emb.shape[-1]:
             # Project to smaller dimension
@@ -76,24 +194,32 @@ class AlignmentEvaluator:
                 video_emb = video_emb[..., :target_dim]
             if audio_emb.shape[-1] > target_dim:
                 audio_emb = audio_emb[..., :target_dim]
+                
+        # Compute point-wise similarity between all frame pairs
+        sim_matrix = torch.matmul(video_emb, audio_emb.transpose(-2, -1))
         
-        # Normalize embeddings
-        video_norm = F.normalize(video_emb, p=2, dim=-1)
-        audio_norm = F.normalize(audio_emb, p=2, dim=-1)
+        # Get maximum similarity for each video frame (best matching audio)
+        max_sim_v = sim_matrix.max(dim=-1)[0].mean()
         
-        # Compute similarity matrix
-        similarity = torch.matmul(video_norm, audio_norm.transpose(-2, -1))
+        # Get maximum similarity for each audio frame (best matching video)
+        max_sim_a = sim_matrix.max(dim=-2)[0].mean()
         
-        # Return mean similarity
-        return similarity.mean().item()
+        # Harmonic mean of the two similarities (balances both modalities)
+        sim = 2 * max_sim_v * max_sim_a / (max_sim_v + max_sim_a + 1e-8)
+        
+        return sim.item()
     
     def _compute_temporal_consistency(self, alignment_scores: torch.Tensor) -> float:
-        """Measure temporal consistency of alignment scores"""
+        """Measure temporal consistency of alignment scores with improved metric"""
         # Compute gradient of alignment scores
         grad = torch.gradient(alignment_scores.squeeze(), dim=0)[0]
         
-        # Measure smoothness (lower is better)
-        smoothness = -torch.mean(torch.abs(grad)).item()
+        # Compute second derivative to measure smoothness
+        grad2 = torch.gradient(grad, dim=0)[0]
+        
+        # Penalize both large first derivatives (fast changes) and 
+        # large second derivatives (inconsistent changes)
+        smoothness = -(torch.mean(torch.abs(grad)) + 0.5 * torch.mean(torch.abs(grad2))).item()
         
         return smoothness
     
@@ -107,11 +233,11 @@ class AlignmentEvaluator:
         
         # Project embeddings to same feature dimension if needed
         if video_mean.shape[-1] != audio_mean.shape[-1]:
-            target_dim = min(video_mean.shape[-1], audio_mean.shape[-1])
-            if video_mean.shape[-1] > target_dim:
-                video_mean = video_mean[..., :target_dim]
-            if audio_mean.shape[-1] > target_dim:
-                audio_mean = audio_mean[..., :target_dim]
+            min_dim = min(video_mean.shape[-1], audio_mean.shape[-1])
+            if video_mean.shape[-1] > min_dim:
+                video_mean = video_mean[..., :min_dim]
+            if audio_mean.shape[-1] > min_dim:
+                audio_mean = audio_mean[..., :min_dim]
         
         # Compute Wasserstein distance approximation
         modality_gap = torch.norm(video_mean - audio_mean, p=2).item()
@@ -267,34 +393,37 @@ class AlignmentEvaluator:
                                audio_emb: torch.Tensor,
                                save_path: str) -> None:
         """Plot cross-modal attention heatmap"""
-        # Ensure we're using encoded embeddings (256-dim)
-        if video_emb.shape[-1] != 256:
-            print(f"Warning: Expected video embeddings of dim 256, got {video_emb.shape[-1]}")
-            if self.model:
-                video_emb = self.model.encode_video(video_emb)
-            else:
-                print("No model available for encoding, using raw embeddings")
-        if audio_emb.shape[-1] != 256:
-            print(f"Warning: Expected audio embeddings of dim 256, got {audio_emb.shape[-1]}")
-            if self.model:
-                audio_emb = self.model.encode_audio(audio_emb)
-            else:
-                print("No model available for encoding, using raw embeddings")
+        # Convert to numpy for direct plotting
+        if torch.is_tensor(video_emb):
+            video_emb = video_emb.detach().cpu()
+        if torch.is_tensor(audio_emb):
+            audio_emb = audio_emb.detach().cpu()
             
-        # Compute attention weights
+        # Check if dimensions need to be adjusted
+        if video_emb.shape[-1] != audio_emb.shape[-1]:
+            # Project to smaller dimension
+            min_dim = min(video_emb.shape[-1], audio_emb.shape[-1])
+            if video_emb.shape[-1] > min_dim:
+                video_emb = video_emb[..., :min_dim]
+            if audio_emb.shape[-1] > min_dim:
+                audio_emb = audio_emb[..., :min_dim]
+            
+        # Normalize for cosine similarity
         video_norm = F.normalize(video_emb, p=2, dim=-1)
         audio_norm = F.normalize(audio_emb, p=2, dim=-1)
+        
+        # Compute attention matrix
         attention = torch.matmul(video_norm, audio_norm.transpose(-2, -1))
         
         # Plot
         plt.figure(figsize=(10, 8))
-        sns.heatmap(attention.detach().cpu().numpy().squeeze(),
+        sns.heatmap(attention.numpy().squeeze(),
                    cmap='viridis')
         plt.title("Cross-modal Attention Heatmap")
         plt.xlabel("Audio Time Steps")
         plt.ylabel("Video Time Steps")
         plt.savefig(save_path)
-        plt.close() 
+        plt.close()
 
 # Here's a detailed explanation of the new evaluation capabilities:
 # New Evaluation Metrics:

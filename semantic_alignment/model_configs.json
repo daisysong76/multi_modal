@@ -1,0 +1,26 @@
+{
+  "small": {
+    "hidden_dim": 256,
+    "num_heads": 4,
+    "depth": 2,
+    "mlp_dim": 512
+  },
+  "medium": {
+    "hidden_dim": 512,
+    "num_heads": 8,
+    "depth": 4,
+    "mlp_dim": 1024
+  },
+  "large": {
+    "hidden_dim": 768,
+    "num_heads": 12,
+    "depth": 6,
+    "mlp_dim": 2048
+  },
+  "xlarge": {
+    "hidden_dim": 1024,
+    "num_heads": 16,
+    "depth": 8,
+    "mlp_dim": 3072
+  }
+} 

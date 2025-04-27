@@ -1,0 +1,26 @@
+{
+  "tiny": {
+    "hidden_dim": 64,
+    "num_heads": 2,
+    "depth": 2,
+    "mlp_dim": 128
+  },
+  "small": {
+    "hidden_dim": 128,
+    "num_heads": 4,
+    "depth": 4,
+    "mlp_dim": 256
+  },
+  "medium": {
+    "hidden_dim": 256,
+    "num_heads": 8,
+    "depth": 6,
+    "mlp_dim": 512
+  },
+  "large": {
+    "hidden_dim": 512,
+    "num_heads": 8,
+    "depth": 8,
+    "mlp_dim": 1024
+  }
+} 
